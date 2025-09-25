@@ -9,6 +9,7 @@ export type Report = {
     reported_user_id: number;
     report_picture?: string | null;
     report_description?: string | null;
+    report_result?: string | null;
 };
 
 const SOURCE: 'api' | 'mock' = 'api';
@@ -25,6 +26,7 @@ export const normalizeReport = (x: any): Report => ({
     reported_user_id: x.reported_user_id ?? x.Reported?.ID ?? 0,
     report_picture: x.report_picture ?? null,
     report_description: x.report_description ?? null,
+    report_result: x.report_result ?? null,
 });
 
 async function request<T = any>(path: string, init?: RequestInit): Promise<T> {
@@ -60,7 +62,8 @@ export async function getReport(id: number): Promise<Report | null> {
 export async function updateReportStatus(
     id: number,
     current: Report,
-    nextStatus: 'approved' | 'rejected'
+    nextStatus: 'approved' | 'rejected',
+    resultText: string
 ): Promise<Report> {
     const payload = {
         class_session_id: current.class_session_id,
@@ -72,6 +75,7 @@ export async function updateReportStatus(
         report_type: current.report_type,
         report_user_id: current.report_user_id,
         reported_user_id: current.reported_user_id,
+        report_result: resultText,
     };
 
     const updated = await request(`/reports/${id}`, {
@@ -92,6 +96,7 @@ export async function createReport(payload: {
     report_type: string;
     report_user_id: number;
     reported_user_id: number;
+    report_result?: string | null;
 }): Promise<Report> {
     const raw = await request('/reports', {
         method: 'POST',

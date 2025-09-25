@@ -23,29 +23,29 @@ export default function ReportDetailPage() {
         setLoading(true);
         setErr(null);
         getReport(Number(id))
-            .then(setReport)
+            .then((r) => {
+                setReport(r);
+                setDecisionNote(''); // เริ่มด้วยค่าว่างเสมอ
+            })
             .catch((e) => setErr(String(e)))
             .finally(() => setLoading(false));
     }, [id]);
 
     const status = (report?.report_status || '').toLowerCase();
     const isPending = status === 'pending';
-    const decidedText =
-        status === 'approved'
-            ? 'This report has been approved'
-            : status === 'rejected'
-                ? 'This report has been rejected'
-                : '';
 
     async function onConfirm() {
         if (!report || !confirm.action) return;
+        const note = decisionNote.trim();
+        if (!note) return; // กันพลาดอีกชั้น
+
         setSaving(true);
         setErr(null);
         try {
-            const nextStatus = confirm.action === 'approve' ? 'approved' : 'rejected';
-            const updated = await updateReportStatus(report.id, report, nextStatus);
+            const next = confirm.action === 'approve' ? 'approved' : 'rejected';
+            const updated = await updateReportStatus(report.id, report, next, note);
             setReport(updated);
-            setDecisionNote('');
+            setDecisionNote(''); // เคลียร์กล่อง
         } catch (e: any) {
             setErr(e?.message ?? 'Failed to update report');
         } finally {
@@ -57,8 +57,7 @@ export default function ReportDetailPage() {
     const evidenceSrc = useMemo(() => {
         const p = report?.report_picture;
         if (!p) return '';
-        if (p.startsWith('http')) return p;
-        if (p.startsWith('data:')) return p;
+        if (p.startsWith('http') || p.startsWith('data:')) return p;
         return `data:image/png;base64,${p}`;
     }, [report?.report_picture]);
 
@@ -68,7 +67,7 @@ export default function ReportDetailPage() {
 
     return (
         <div className="space-y-6">
-            {/*Header*/}
+            {/* Header */}
             <div className="flex items-center gap-3">
                 <button
                     onClick={() => router.back()}
@@ -76,46 +75,42 @@ export default function ReportDetailPage() {
                 >
                     ← Back
                 </button>
-                <h1 className="text-3xl font-bold">
-                    Report #{String(report.id).padStart(3, '0')}
-                </h1>
+                <h1 className="text-3xl font-bold">Report #{String(report.id).padStart(3, '0')}</h1>
+                <span
+                    className={
+                        'ml-2 px-2 py-0.5 rounded text-sm capitalize ' +
+                        (status === 'pending'
+                            ? 'bg-yellow-100 text-yellow-700'
+                            : status === 'approved'
+                                ? 'bg-green-100 text-green-700'
+                                : status === 'rejected'
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-gray-100 text-gray-700')
+                    }
+                >
+                    {status}
+                </span>
             </div>
 
-            {/*Two-column layout */}
+            {/* Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left: Report detail card */}
+                {/* Detail */}
                 <div className="lg:col-span-2 border rounded-xl bg-white">
                     <div className="p-5 border-b">
                         <h2 className="text-xl font-semibold">Report detail</h2>
                     </div>
                     <div className="p-5 space-y-4 text-sm">
                         <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <div className="text-gray-500 mb-1">Reported User</div>
-                                <UserBadge id={report.reported_user_id} colorClass="bg-yellow-400" />
-                            </div>
-                            <div>
-                                <div className="text-gray-500 mb-1">Reported By</div>
-                                <UserBadge id={report.report_user_id} colorClass="bg-red-500" />
-                            </div>
+                            <Field label="Reported User" value={`U${String(report.reported_user_id).padStart(3, '0')}`} />
+                            <Field label="Reported By" value={`U${String(report.report_user_id).padStart(3, '0')}`} />
                         </div>
 
-                        <div>
-                            <div className="font-medium">Class session</div>
-                            <div className="text-gray-700">
-                                ID: CS-{String(report.class_session_id).padStart(3, '0')}
-                            </div>
-                        </div>
-
-                        <div>
-                            <span className="font-medium">Reported date:</span>{' '}
-                            {report.report_date ? new Date(report.report_date).toLocaleString() : '—'}
-                        </div>
-
-                        <div>
-                            <span className="font-medium">Reason:</span>{' '}
-                            <span className="capitalize">{report.report_reason?.replaceAll('_', ' ')}</span>
-                        </div>
+                        <Field label="Class session" value={`CS-${String(report.class_session_id).padStart(3, '0')}`} />
+                        <Field
+                            label="Reported date"
+                            value={report.report_date ? new Date(report.report_date).toLocaleString() : '—'}
+                        />
+                        <Field label="Reason" value={(report.report_reason || '').replaceAll('_', ' ')} />
 
                         <div>
                             <div className="font-medium mb-2">Detail</div>
@@ -126,9 +121,9 @@ export default function ReportDetailPage() {
                     </div>
                 </div>
 
-                {/* Right: Evidence + Result */}
+                {/* Evidence + Result */}
                 <div className="space-y-6">
-                    {/* Evidence Card */}
+                    {/* Evidence */}
                     <div className="border rounded-xl bg-white">
                         <div className="p-5 border-b">
                             <h2 className="text-xl font-semibold">Evidence</h2>
@@ -148,13 +143,13 @@ export default function ReportDetailPage() {
                         </div>
                     </div>
 
-                    {/* Result Card */}
+                    {/* Result */}
                     <div className="border rounded-xl bg-white">
                         <div className="p-5 border-b">
                             <h2 className="text-xl font-semibold">Report Result</h2>
                         </div>
                         <div className="p-5 space-y-4">
-                            {status === 'pending' ? (
+                            {isPending ? (
                                 <>
                                     <textarea
                                         placeholder="Enter reason for your decision..."
@@ -166,8 +161,8 @@ export default function ReportDetailPage() {
                                         <button
                                             onClick={() => setConfirm({ open: true, action: 'reject' })}
                                             className={`rounded-lg border px-4 py-2 ${decisionNote.trim() && !saving
-                                                ? 'bg-white hover:bg-red-50'
-                                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                    ? 'bg-white hover:bg-red-50'
+                                                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                                 }`}
                                             disabled={!decisionNote.trim() || saving}
                                         >
@@ -176,8 +171,8 @@ export default function ReportDetailPage() {
                                         <button
                                             onClick={() => setConfirm({ open: true, action: 'approve' })}
                                             className={`rounded-lg border px-4 py-2 ${decisionNote.trim() && !saving
-                                                ? 'bg-white hover:bg-green-50'
-                                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                    ? 'bg-white hover:bg-green-50'
+                                                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                                 }`}
                                             disabled={!decisionNote.trim() || saving}
                                         >
@@ -186,13 +181,19 @@ export default function ReportDetailPage() {
                                     </div>
                                 </>
                             ) : (
-                                <div
-                                    className={`rounded-lg border p-4 ${status === 'approved'
-                                        ? 'bg-green-50 text-green-700 border-green-200'
-                                        : 'bg-red-50 text-red-700 border-red-200'
-                                        }`}
-                                >
-                                    {decidedText}
+                                <div className="space-y-2">
+                                    <div
+                                        className={
+                                            'rounded-lg border p-4 ' +
+                                            (status === 'approved'
+                                                ? 'bg-green-50 text-green-700 border-green-200'
+                                                : 'bg-red-50 text-red-700 border-red-200')
+                                        }
+                                    >
+                                        {/* แสดงข้อความที่บันทึกไว้จาก backend */}
+                                        <div className="font-medium mb-1">Decision note</div>
+                                        <div className="whitespace-pre-wrap">{report.report_result || '—'}</div>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -200,7 +201,7 @@ export default function ReportDetailPage() {
                 </div>
             </div>
 
-            {/* Confirmation Modal */}
+            {/* Confirm modal */}
             {confirm.open && confirm.action && (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                     <div className="bg-white rounded-xl p-6 w-96 shadow-xl">
@@ -223,12 +224,25 @@ export default function ReportDetailPage() {
                                 className="rounded-lg border px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                                 disabled={saving}
                             >
-                                {saving ? 'Saving...' : confirm.action === 'approve' ? 'Confirm Approve' : 'Confirm Reject'}
+                                {saving
+                                    ? 'Saving...'
+                                    : confirm.action === 'approve'
+                                        ? 'Confirm Approve'
+                                        : 'Confirm Reject'}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+    return (
+        <div>
+            <div className="text-gray-500 mb-1">{label}</div>
+            <div className="text-gray-800">{value}</div>
         </div>
     );
 }
