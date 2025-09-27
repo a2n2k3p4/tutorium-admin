@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,36 +9,38 @@ const baseFromParts = [
     process.env.PORT ? `:${process.env.PORT}` : '',
 ].join('');
 const BASE = baseFromSingle || baseFromParts;
+if (!BASE) throw new Error('Missing API_BASE_URL or (API_URL + PORT) in environment');
 
-if (!BASE) {
-    throw new Error('Missing API_BASE_URL or (API_URL + PORT) in environment');
-}
+type Ctx = { params: { path: string[] } };
 
-type Ctx = { params: Promise<{ path: string[] }> };
+async function handler(req: NextRequest, { params }: Ctx) {
+    const target = `${BASE}/${params.path.join('/')}${new URL(req.url).search}`;
 
-async function handler(req: NextRequest, ctx: Ctx) {
-    const { path } = await ctx.params;
-    const url = new URL(req.url);
-    const target = `${BASE}/${path.join('/')}${url.search}`;
+    const token = (await cookies()).get('token')?.value;
+    const incomingAuth = req.headers.get('authorization') || undefined;
+    const authHeader = incomingAuth ?? (token ? `Bearer ${token}` : undefined);
 
-    const res = await fetch(target, {
+    const headers: Record<string, string> = {
+        accept: req.headers.get('accept') ?? 'application/json',
+    };
+    const contentType = req.headers.get('content-type');
+    if (!['GET', 'HEAD'].includes(req.method) && contentType) {
+        headers['content-type'] = contentType;
+    }
+    if (authHeader) headers.authorization = authHeader;
+
+    const upstream = await fetch(target, {
         method: req.method,
-        headers: {
-            accept: req.headers.get('accept') ?? 'application/json',
-            'content-type': req.headers.get('content-type') ?? 'application/json',
-            ...(req.headers.get('authorization')
-                ? { authorization: req.headers.get('authorization') as string }
-                : {}),
-        },
+        headers,
         body: ['GET', 'HEAD'].includes(req.method) ? undefined : await req.arrayBuffer(),
         cache: 'no-store',
         redirect: 'manual',
     });
 
-    return new Response(res.body, {
-        status: res.status,
+    const res = new Response(upstream.body, {
+        status: upstream.status,
         headers: {
-            'content-type': res.headers.get('content-type') ?? 'application/json',
+            'content-type': upstream.headers.get('content-type') ?? 'application/json',
         },
     });
 }
