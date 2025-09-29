@@ -11,10 +11,11 @@ const baseFromParts = [
 const BASE = baseFromSingle || baseFromParts;
 if (!BASE) throw new Error('Missing API_BASE_URL or (API_URL + PORT) in environment');
 
-type Ctx = { params: { path: string[] } };
+type Ctx = { params: Promise<{ path: string[] }> };
 
-async function handler(req: NextRequest, { params }: Ctx) {
-    const target = `${BASE}/${params.path.join('/')}${new URL(req.url).search}`;
+async function handler(req: NextRequest, ctx: Ctx) {
+    const { path } = await ctx.params;
+    const target = `${BASE}/${path.join('/')}${new URL(req.url).search}`;
 
     const token = (await cookies()).get('token')?.value;
     const incomingAuth = req.headers.get('authorization') || undefined;
@@ -37,7 +38,7 @@ async function handler(req: NextRequest, { params }: Ctx) {
         redirect: 'manual',
     });
 
-    const res = new Response(upstream.body, {
+    return new Response(upstream.body, {
         status: upstream.status,
         headers: {
             'content-type': upstream.headers.get('content-type') ?? 'application/json',
