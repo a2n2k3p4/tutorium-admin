@@ -2,11 +2,10 @@
 import React, { useActionState } from "react";
 import { login } from './action';
 
+type LoginState = { message: string };
 export default function LoginPage() {
-    const initState = {
-        message: ''
-    }
-    const [state, formAction] = useActionState(login, initState);
+    const initState: LoginState = { message: '' };
+    const [state, formAction] = useActionState<LoginState, FormData>(login, initState);
 
     return (
         <div className="min-h-[100dvh] grid place-items-center p-4">
