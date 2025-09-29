@@ -198,3 +198,48 @@ export async function getBanTeachers(): Promise<BanTeacher[]> {
             : [];
     return arr.map(normalizeBanTeacher);
 }
+
+export async function banLearner(learner_id: number, days = 7, description = ''): Promise<BanLearner> {
+    const now = new Date();
+    const end = new Date(now);
+    end.setDate(end.getDate() + days);
+
+    const raw = await request('/banlearners', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            learner_id,
+            ban_start: now.toISOString(),
+            ban_end: end.toISOString(),
+            ban_description: description,
+        }),
+    });
+    return normalizeBanLearner(raw);
+}
+
+export async function unbanLearner(banId: number): Promise<void> {
+    await request(`/banlearners/${banId}`, { method: 'DELETE' });
+}
+
+export async function banTeacher(teacher_id: number, days = 7, description = ''): Promise<BanTeacher> {
+    const now = new Date();
+    const end = new Date(now);
+    end.setDate(end.getDate() + days);
+
+    const raw = await request('/banteachers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            teacher_id,
+            ban_start: now.toISOString(),
+            ban_end: end.toISOString(),
+            ban_description: description,
+        }),
+    });
+    return normalizeBanTeacher(raw);
+}
+
+export async function unbanTeacher(banId: number): Promise<void> {
+    await request(`/banteachers/${banId}`, { method: 'DELETE' });
+}
+
