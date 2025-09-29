@@ -1,10 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     getUsers,
     getBanLearners,
     getBanTeachers,
+    banLearner,
+    unbanLearner,
+    banTeacher,
+    unbanTeacher,
     type User,
     type BanLearner,
     type BanTeacher,
@@ -34,8 +38,11 @@ export default function UserPage() {
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState<string | null>(null);
-    const [learnerBanMap, setLearnerBanMap] = useState<Map<number, Date>>(new Map());
-    const [teacherBanMap, setTeacherBanMap] = useState<Map<number, Date>>(new Map());
+
+    // เก็บข้อมูล ban ที่ active พร้อม id เรคอร์ด (สำหรับ unban)
+    const [learnerBanInfo, setLearnerBanInfo] = useState<Map<number, { id: number; until: Date }>>(new Map());
+    const [teacherBanInfo, setTeacherBanInfo] = useState<Map<number, { id: number; until: Date }>>(new Map());
+
     const [role, setRole] = useState<RoleFilter>('all');
     const [status, setStatus] = useState<StatusFilter>('all');
     const [query, setQuery] = useState('');
@@ -44,6 +51,7 @@ export default function UserPage() {
     );
 
     const [page, setPage] = useState(1);
+    const [workingUserId, setWorkingUserId] = useState<number | null>(null); // ล็อกปุ่มขณะยิง API
 
     useEffect(() => {
         setLoading(true);
@@ -53,8 +61,8 @@ export default function UserPage() {
             .then(([u, bl, bt]) => {
                 setUsers(u);
                 const now = new Date();
-                setLearnerBanMap(buildActiveBanMapLearner(bl, now));
-                setTeacherBanMap(buildActiveBanMapTeacher(bt, now));
+                setLearnerBanInfo(MapBanLearner(bl, now));
+                setTeacherBanInfo(MapBanTeacher(bt, now));
             })
             .catch((e) => setErr(String(e)))
             .finally(() => setLoading(false));
@@ -73,7 +81,7 @@ export default function UserPage() {
 
         const byStatus = (u: User) => {
             if (applied.status === 'all') return true;
-            const info = statusInfo(u, learnerBanMap, teacherBanMap);
+            const info = statusInfo(u, learnerBanInfo, teacherBanInfo);
             const key: StatusFilter =
                 info.text === 'Active'
                     ? 'active'
@@ -101,7 +109,7 @@ export default function UserPage() {
                 );
             })
             .sort((a, b) => a.id - b.id);
-    }, [users, applied, learnerBanMap, teacherBanMap]);
+    }, [users, applied, learnerBanInfo, teacherBanInfo]);
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     const currentPage = Math.min(page, totalPages);
@@ -118,6 +126,73 @@ export default function UserPage() {
         setQuery('');
         setApplied({ role: 'all', status: 'all', query: '' });
         setPage(1);
+    }
+
+    async function refreshBans() {
+        const [bl, bt] = await Promise.all([getBanLearners(), getBanTeachers()]);
+        const now = new Date();
+        setLearnerBanInfo(MapBanLearner(bl, now));
+        setTeacherBanInfo(MapBanTeacher(bt, now));
+    }
+
+    async function onBanLearner(u: User) {
+        if (!u.learner_id) return;
+        if (!window.confirm(`Ban learner (U${u.id}) 7 days?`)) return;
+        setWorkingUserId(u.id);
+        try {
+            await banLearner(u.learner_id, 7);
+            await refreshBans();
+        } catch (e: any) {
+            alert(e?.message ?? 'Failed to ban learner');
+        } finally {
+            setWorkingUserId(null);
+        }
+    }
+
+    async function onUnbanLearner(u: User) {
+        if (!u.learner_id) return;
+        const info = learnerBanInfo.get(u.learner_id);
+        if (!info) return;
+        if (!window.confirm(`Unban learner (U${u.id}) now?`)) return;
+        setWorkingUserId(u.id);
+        try {
+            await unbanLearner(info.id);
+            await refreshBans();
+        } catch (e: any) {
+            alert(e?.message ?? 'Failed to unban learner');
+        } finally {
+            setWorkingUserId(null);
+        }
+    }
+
+    async function onBanTeacher(u: User) {
+        if (!u.teacher_id) return;
+        if (!window.confirm(`Ban teacher (U${u.id}) 7 days?`)) return;
+        setWorkingUserId(u.id);
+        try {
+            await banTeacher(u.teacher_id, 7);
+            await refreshBans();
+        } catch (e: any) {
+            alert(e?.message ?? 'Failed to ban teacher');
+        } finally {
+            setWorkingUserId(null);
+        }
+    }
+
+    async function onUnbanTeacher(u: User) {
+        if (!u.teacher_id) return;
+        const info = teacherBanInfo.get(u.teacher_id);
+        if (!info) return;
+        if (!window.confirm(`Unban teacher (U${u.id}) now?`)) return;
+        setWorkingUserId(u.id);
+        try {
+            await unbanTeacher(info.id);
+            await refreshBans();
+        } catch (e: any) {
+            alert(e?.message ?? 'Failed to unban teacher');
+        } finally {
+            setWorkingUserId(null);
+        }
     }
 
     function exportCSV() {
@@ -137,7 +212,7 @@ export default function UserPage() {
             'balance',
         ];
         const rows = filtered.map((u) => {
-            const info = statusInfo(u, learnerBanMap, teacherBanMap);
+            const info = statusInfo(u, learnerBanInfo, teacherBanInfo);
             return [
                 u.id,
                 u.learner_id ?? '',
@@ -172,7 +247,10 @@ export default function UserPage() {
         <div className="p-6 space-y-4">
             <div className="flex items-center justify-between">
                 <h1 className="text-2xl font-bold">KU Tutorium User management</h1>
-                <button onClick={exportCSV} className="rounded-md border px-4 py-2 text-sm bg-white hover:bg-gray-50">
+                <button
+                    onClick={exportCSV}
+                    className="rounded-md border px-4 py-2 text-sm bg-white hover:bg-gray-50"
+                >
                     Export
                 </button>
             </div>
@@ -212,10 +290,16 @@ export default function UserPage() {
                     />
                 </div>
 
-                <button onClick={onApply} className="h-9 rounded-md bg-gray-900 text-white px-4 text-sm hover:bg-black">
+                <button
+                    onClick={onApply}
+                    className="h-9 rounded-md bg-gray-900 text-white px-4 text-sm hover:bg-black"
+                >
                     Apply
                 </button>
-                <button onClick={onReset} className="h-9 rounded-md border px-4 text-sm bg-white hover:bg-gray-50">
+                <button
+                    onClick={onReset}
+                    className="h-9 rounded-md border px-4 text-sm bg-white hover:bg-gray-50"
+                >
                     Reset
                 </button>
             </div>
@@ -238,7 +322,11 @@ export default function UserPage() {
                     </thead>
                     <tbody>
                         {pageItems.map((u) => {
-                            const info = statusInfo(u, learnerBanMap, teacherBanMap);
+                            const info = statusInfo(u, learnerBanInfo, teacherBanInfo);
+                            const isWorking = workingUserId === u.id;
+                            const lInfo = u.learner_id ? learnerBanInfo.get(u.learner_id) ?? null : null;
+                            const tInfo = u.teacher_id ? teacherBanInfo.get(u.teacher_id) ?? null : null;
+
                             return (
                                 <tr key={u.id} className="border-t">
                                     <Td>{u.id}</Td>
@@ -250,9 +338,16 @@ export default function UserPage() {
                                     <Td>{u.ban_count ?? 0}</Td>
                                     <Td className="align-middle">{statusBadge(info.text, info.until)}</Td>
                                     <Td className="text-center">
-                                        <button className="inline-flex items-center rounded px-2 py-1 border bg-white hover:bg-gray-50">
-                                            ⋮
-                                        </button>
+                                        <KebabActions
+                                            user={u}
+                                            lInfo={lInfo}
+                                            tInfo={tInfo}
+                                            isWorking={isWorking}
+                                            onBanLearner={onBanLearner}
+                                            onUnbanLearner={onUnbanLearner}
+                                            onBanTeacher={onBanTeacher}
+                                            onUnbanTeacher={onUnbanTeacher}
+                                        />
                                     </Td>
                                 </tr>
                             );
@@ -302,6 +397,7 @@ export default function UserPage() {
     );
 }
 
+/* ---------- Small UI helpers ---------- */
 function Th({ children, className = '' }: any) {
     return <th className={`px-3 py-2 text-left font-medium ${className}`}>{children}</th>;
 }
@@ -323,39 +419,43 @@ function isActive(start?: string | null, end?: string | null, now = new Date()) 
     return now >= s && now <= e;
 }
 
-function buildActiveBanMapLearner(list: BanLearner[], now = new Date()) {
-    const map = new Map<number, Date>();
+function MapBanLearner(list: BanLearner[], now = new Date()) {
+    const map = new Map<number, { id: number; until: Date }>();
     for (const b of list) {
         if (isActive(b.ban_start, b.ban_end, now) && Number.isFinite(Number(b.learner_id))) {
             const id = Number(b.learner_id);
             const end = b.ban_end ? new Date(b.ban_end) : null;
             if (end && !isNaN(+end)) {
                 const prev = map.get(id);
-                if (!prev || end > prev) map.set(id, end);
+                if (!prev || end > prev.until) map.set(id, { id: Number(b.id ?? 0), until: end });
             }
         }
     }
     return map;
 }
 
-function buildActiveBanMapTeacher(list: BanTeacher[], now = new Date()) {
-    const map = new Map<number, Date>();
+function MapBanTeacher(list: BanTeacher[], now = new Date()) {
+    const map = new Map<number, { id: number; until: Date }>();
     for (const b of list) {
         if (isActive(b.ban_start, b.ban_end, now) && Number.isFinite(Number(b.teacher_id))) {
             const id = Number(b.teacher_id);
             const end = b.ban_end ? new Date(b.ban_end) : null;
             if (end && !isNaN(+end)) {
                 const prev = map.get(id);
-                if (!prev || end > prev) map.set(id, end);
+                if (!prev || end > prev.until) map.set(id, { id: Number(b.id ?? 0), until: end });
             }
         }
     }
     return map;
 }
 
-function statusInfo(u: User, learnerMap: Map<number, Date>, teacherMap: Map<number, Date>) {
-    const lEnd = u.learner_id ? learnerMap.get(u.learner_id) ?? null : null;
-    const tEnd = u.teacher_id ? teacherMap.get(u.teacher_id) ?? null : null;
+function statusInfo(
+    u: User,
+    learnerMap: Map<number, { id: number; until: Date }>,
+    teacherMap: Map<number, { id: number; until: Date }>
+) {
+    const lEnd = u.learner_id ? learnerMap.get(u.learner_id)?.until ?? null : null;
+    const tEnd = u.teacher_id ? teacherMap.get(u.teacher_id)?.until ?? null : null;
 
     if (lEnd && tEnd) return { text: 'Both' as const, until: lEnd > tEnd ? lEnd : tEnd };
     if (lEnd) return { text: 'Learner' as const, until: lEnd };
@@ -409,4 +509,102 @@ function fmtShort(d: Date) {
     const hh = String(d.getHours()).padStart(2, '0');
     const mi = String(d.getMinutes()).padStart(2, '0');
     return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+}
+
+function KebabActions({
+    user,
+    lInfo,
+    tInfo,
+    isWorking,
+    onBanLearner,
+    onUnbanLearner,
+    onBanTeacher,
+    onUnbanTeacher,
+}: {
+    user: User;
+    lInfo: { id: number; until: Date } | null;
+    tInfo: { id: number; until: Date } | null;
+    isWorking: boolean;
+    onBanLearner: (u: User) => Promise<void>;
+    onUnbanLearner: (u: User) => Promise<void>;
+    onBanTeacher: (u: User) => Promise<void>;
+    onUnbanTeacher: (u: User) => Promise<void>;
+}) {
+    const [open, setOpen] = useState(false);
+    const boxRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        function onDocClick(e: MouseEvent) {
+            if (!boxRef.current) return;
+            if (!boxRef.current.contains(e.target as Node)) setOpen(false);
+        }
+        function onEsc(e: KeyboardEvent) {
+            if (e.key === 'Escape') setOpen(false);
+        }
+        document.addEventListener('click', onDocClick);
+        document.addEventListener('keydown', onEsc);
+        return () => {
+            document.removeEventListener('click', onDocClick);
+            document.removeEventListener('keydown', onEsc);
+        };
+    }, []);
+
+    const hasAnyAction = !!user.learner_id || !!user.teacher_id;
+
+    return (
+        <div ref={boxRef} className="relative inline-block text-left">
+            <button
+                disabled={!hasAnyAction || isWorking}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setOpen((v) => !v);
+                }}
+                className="inline-flex items-center rounded px-2 py-1 border bg-white hover:bg-gray-50 disabled:opacity-50"
+                aria-haspopup="menu"
+                aria-expanded={open}
+            >
+                ⋮
+            </button>
+
+            {open && (
+                <div
+                    role="menu"
+                    className="absolute right-0 z-10 mt-2 w-44 origin-top-right rounded-md border bg-white shadow-lg p-1"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {/* Learner actions */}
+                    {user.learner_id && (
+                        <button
+                            role="menuitem"
+                            disabled={isWorking}
+                            onClick={async () => {
+                                setOpen(false);
+                                if (lInfo) await onUnbanLearner(user);
+                                else await onBanLearner(user);
+                            }}
+                            className="block w-full text-left px-3 py-2 rounded hover:bg-gray-50 disabled:opacity-50"
+                        >
+                            {lInfo ? 'Unban Learner' : 'Ban Learner (7d)'}
+                        </button>
+                    )}
+
+                    {/* Teacher actions */}
+                    {user.teacher_id && (
+                        <button
+                            role="menuitem"
+                            disabled={isWorking}
+                            onClick={async () => {
+                                setOpen(false);
+                                if (tInfo) await onUnbanTeacher(user);
+                                else await onBanTeacher(user);
+                            }}
+                            className="block w-full text-left px-3 py-2 rounded hover:bg-gray-50 disabled:opacity-50"
+                        >
+                            {tInfo ? 'Unban Teacher' : 'Ban Teacher (7d)'}
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
 }
