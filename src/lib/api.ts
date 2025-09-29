@@ -105,3 +105,48 @@ export async function createReport(payload: {
     });
     return normalizeReport(raw);
 }
+
+export type User = {
+    id: number;
+    student_id: string;
+    first_name: string;
+    last_name: string;
+    gender: string | null;
+    phone_number: string | null;
+    balance: number;
+    ban_count: number;
+    learner_id: number | null;
+    learner_flag: number;
+    teacher_id: number | null;
+    teacher_flag: number;
+    admin_id: number | null;
+};
+
+export const normalizeUser = (x: any): User => ({
+    id: x.id ?? x.ID,
+    student_id: x.student_id ?? '',
+    first_name: x.first_name ?? '',
+    last_name: x.last_name ?? '',
+    gender: x.gender ?? null,
+    phone_number: x.phone_number ?? null,
+    balance: Number(x.balance ?? 0),
+    ban_count: Number(x.ban_count ?? 0),
+
+    learner_id: x.learner_id ?? x.Learner?.ID ?? null,
+    learner_flag: Number(x.learner_flag ?? x.Learner?.flag_count ?? 0),
+
+    teacher_id: x.teacher_id ?? x.Teacher?.ID ?? null,
+    teacher_flag: Number(x.teacher_flag ?? x.Teacher?.flag_count ?? 0),
+
+    admin_id: x.admin_id ?? x.Admin?.ID ?? null,
+});
+
+export async function getUsers(): Promise<User[]> {
+    const raw = await request<any[]>('/users');
+    const arr = Array.isArray(raw)
+        ? raw
+        : (raw && typeof raw === 'object' && 'data' in raw && Array.isArray((raw as any).data))
+            ? (raw as any).data
+            : [];
+    return arr.map(normalizeUser);
+}
