@@ -150,3 +150,51 @@ export async function getUsers(): Promise<User[]> {
             : [];
     return arr.map(normalizeUser);
 }
+
+export type BanLearner = {
+    id: number;
+    learner_id: number;
+    ban_start: string;
+    ban_end: string;
+};
+
+export type BanTeacher = {
+    id: number;
+    teacher_id: number;
+    ban_start: string;
+    ban_end: string;
+};
+
+export const normalizeBanLearner = (x: any): BanLearner => ({
+    id: x.id ?? x.ID,
+    learner_id: x.learner_id ?? x.Learner?.ID ?? 0,
+    ban_start: x.ban_start ?? x.banStart ?? '',
+    ban_end: x.ban_end ?? x.banEnd ?? '',
+});
+
+export const normalizeBanTeacher = (x: any): BanTeacher => ({
+    id: x.id ?? x.ID,
+    teacher_id: x.teacher_id ?? x.Teacher?.ID ?? 0,
+    ban_start: x.ban_start ?? x.banStart ?? '',
+    ban_end: x.ban_end ?? x.banEnd ?? '',
+});
+
+export async function getBanLearners(): Promise<BanLearner[]> {
+    const raw = await request<any[]>('/banlearners');
+    const arr = Array.isArray(raw)
+        ? raw
+        : (raw && typeof raw === 'object' && Array.isArray((raw as any).data))
+            ? (raw as any).data
+            : [];
+    return arr.map(normalizeBanLearner);
+}
+
+export async function getBanTeachers(): Promise<BanTeacher[]> {
+    const raw = await request<any[]>('/banteachers');
+    const arr = Array.isArray(raw)
+        ? raw
+        : (raw && typeof raw === 'object' && Array.isArray((raw as any).data))
+            ? (raw as any).data
+            : [];
+    return arr.map(normalizeBanTeacher);
+}
