@@ -120,6 +120,7 @@ export type User = {
     teacher_id: number | null;
     teacher_flag: number;
     admin_id: number | null;
+    created_at?: string;
 };
 
 export const normalizeUser = (x: any): User => ({
@@ -139,6 +140,7 @@ export const normalizeUser = (x: any): User => ({
     teacher_flag: Number(x.teacher_flag ?? x.Teacher?.flag_count ?? 0),
 
     admin_id: x.admin_id ?? x.Admin?.ID ?? null,
+    created_at: x.created_at ?? x.CreatedAt ?? undefined,
 });
 
 export async function getUsers(): Promise<User[]> {
@@ -243,3 +245,38 @@ export async function unbanTeacher(banId: number): Promise<void> {
     await request(`/banteachers/${banId}`, { method: 'DELETE' });
 }
 
+export type Transaction = {
+    id: number;
+    user_id: number;
+    created_at: string;
+    updated_at: string;
+    charge_id: string;
+    amount_satang: number;
+    currency: string;
+    channel: string;
+    status: 'pending' | 'paid' | 'failed' | string;
+    meta?: any;
+};
+
+export const normalizeTransaction = (x: any): Transaction => ({
+    id: x.id ?? x.ID,
+    user_id: x.user_id ?? x.UserID ?? 0,
+    created_at: x.created_at ?? x.CreatedAt ?? '',
+    updated_at: x.updated_at ?? x.UpdatedAt ?? '',
+    charge_id: x.charge_id ?? '',
+    amount_satang: Number(x.amount_satang ?? x.amount ?? 0),
+    currency: x.currency ?? 'THB',
+    channel: x.channel ?? '',
+    status: x.status ?? '',
+    meta: x.meta ?? undefined,
+});
+
+export async function getPaymentTransaction(limit = 100, offset = 0): Promise<Transaction[]> {
+    const raw = await request<any>('/payments/transactions');
+    const arr = Array.isArray(raw)
+        ? raw
+        : (raw && Array.isArray(raw.transactions))
+            ? raw.transactions
+            : [];
+    return arr.map(normalizeTransaction);
+}
