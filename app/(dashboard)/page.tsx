@@ -39,7 +39,10 @@ export default function DashboardPage() {
 
   const paidTodayTHB = useMemo(() => {
     const satang = txs
-      .filter(t => (t.status ?? '').toLowerCase() === 'paid' && isSameDay(t.created_at, now))
+      .filter(t => {
+        const s = (t.status ?? '').trim().toLowerCase();
+        return (s === 'paid' || s === 'successful') && isSameDay(t.created_at, now);
+      })
       .reduce((s, t) => s + (t.amount_satang ?? 0), 0);
     return satang / 100;
   }, [txs]);
@@ -170,7 +173,8 @@ function buildDailyRevenue(txs: Transaction[], days: number) {
 
   const bucket = new Map<number, number>();
   for (const t of txs) {
-    if ((t.status ?? '').toLowerCase() !== 'paid') continue;
+    const s = (t.status ?? '').trim().toLowerCase();
+    if (s !== 'paid' && s !== 'successful') continue;
     const d = startOfDay(new Date(t.created_at));
     const k = d.getTime();
     const prev = bucket.get(k) ?? 0;
